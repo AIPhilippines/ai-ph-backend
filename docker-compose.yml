@@ -1,8 +1,12 @@
 version: '3.8'
 
 services:
-  web:
-    build: .
+  app:
+    env_file:
+      - .env
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "20000:20000"
     volumes:
@@ -12,4 +16,3 @@ services:
       - PYTHONPATH=/app
     working_dir: /app
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 20000 --reload
