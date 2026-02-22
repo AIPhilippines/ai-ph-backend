@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.supervisors import ChangeReload
 
-from app.api.v1.router import api_router
+from app.Shared.router.router import api_router
 
 # Configure logging
 logging.basicConfig(
