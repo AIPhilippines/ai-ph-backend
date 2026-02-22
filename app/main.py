@@ -6,6 +6,7 @@ from uvicorn.supervisors import ChangeReload
 
 from app.Shared.router.router import api_router
 
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,  # Set the logging level to INFO
@@ -40,14 +41,3 @@ app.include_router(
 async def root():
     return {"message": "Welcome to the FastAPI application!"}
 
-if __name__ == '__main__':
-    config = uvicorn.Config("app.main:app", port=20000, host="0.0.0.0", log_level="info", reload=True)
-    server = uvicorn.Server(config)
-
-    reload = True
-
-    if reload:
-        sock = config.bind_socket()
-        ChangeReload(config, target=server.run, sockets=[sock]).run()
-    else:
-        server.run()
