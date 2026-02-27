@@ -2,6 +2,8 @@ from fastapi import APIRouter
 from typing import Any
 from app.components.Posts.Application.PostHandlingService import PostHandlingService
 from app.components.Posts.Domain.Post import PostRequest, Post
+from app.components.OnlinePythonCompiler.Domain.CodeExecution import CodeExecutionRequest
+from app.components.OnlinePythonCompiler.Application.CodeExecutionService import CodeExecutionService
 from uuid import UUID
 
 api_router = APIRouter()
@@ -48,4 +50,9 @@ async def delete_post(id: UUID):
         return {"message": "Post deleted successfully."}
     except Exception as e:
         return {"message": str(e)}
+
+@api_router.post("/compile")
+async def compile_code(request: CodeExecutionRequest):
+    code_execution_service = CodeExecutionService()
+    return code_execution_service.execute_python_code(request)
 
