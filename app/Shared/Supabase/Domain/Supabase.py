@@ -21,7 +21,6 @@ class Supabase:
         self.client.table(table_name).delete().eq("id", id).execute()
 
     def execute_sql(self, query: str, params: tuple = None):
-        """Executes a raw SQL query using psycopg2. Useful for migrations."""
         if not DB_PASSWORD:
             raise RuntimeError("DB_PASSWORD is not set in environment variables")
             

@@ -7,7 +7,6 @@ MIGRATIONS_DIR = "migrations"
 MIGRATIONS_TABLE = "_migrations"
 
 def init_db(db: Supabase):
-    """Initializes the migrations table if it doesn't exist."""
     query = f"""
     CREATE TABLE IF NOT EXISTS {MIGRATIONS_TABLE} (
         id SERIAL PRIMARY KEY,
@@ -18,7 +17,6 @@ def init_db(db: Supabase):
     db.execute_sql(query)
 
 def generate_migration(description: str, query: str = ""):
-    """Generates a new migration file."""
     if not os.path.exists(MIGRATIONS_DIR):
         os.makedirs(MIGRATIONS_DIR)
         print(f"Created directory: {MIGRATIONS_DIR}")
@@ -43,7 +41,6 @@ def upgrade(db):
     print(f"Generated migration: {filepath}")
 
 def run_migrations():
-    """Runs all pending migrations."""
     db = Supabase()
     init_db(db)
 
@@ -51,11 +48,9 @@ def run_migrations():
         print("No migrations directory found.")
         return
 
-    # Get already executed migrations
     executed = db.execute_sql(f"SELECT name FROM {MIGRATIONS_TABLE}")
     executed_names = {row[0] for row in executed} if executed else set()
 
-    # Get migration files
     files = sorted([f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".py")])
     
     pending = [f for f in files if f not in executed_names]
@@ -68,17 +63,14 @@ def run_migrations():
         print(f"Running migration: {filename}...")
         filepath = os.path.join(MIGRATIONS_DIR, filename)
         
-        # Import the migration file
         import importlib.util
         spec = importlib.util.spec_from_file_location(filename[:-3], filepath)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         
         try:
-            # Execute the upgrade function
             module.upgrade(db)
             
-            # Record execution
             db.execute_sql(f"INSERT INTO {MIGRATIONS_TABLE} (name) VALUES (%s)", (filename,))
             print(f"Successfully ran {filename}")
         except Exception as e:
