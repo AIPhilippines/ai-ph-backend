@@ -21,7 +21,7 @@ class CodeExecutionService:
                 response = await client.post(
                     self.compiler_url,
                     json={"code": request.code},
-                    timeout=self.timeout + 2.0  # Slightly longer than the internal compiler timeout
+                    timeout=self.timeout + 2.0
                 )
                 
                 if response.status_code != 200:
