@@ -13,98 +13,42 @@ from app.components.Agent.Domain.AgentModels import AgentPromptRequest, AgentPro
 
 shared_db = Supabase()
 
-SYSTEM_PROMPT = """You are a helpful, professional Vaco by Highspring AI assistant. You answer questions using the company knowledge base.
+SYSTEM_PROMPT = """You are Professor Al, a friendly, encouraging, and highly knowledgeable AI Teacher representing UNAI (You and AI).
+UNAI is a pioneering educational initiative with a deep-rooted mission: **"Teaching AI. For Filipinos. By Filipinos."**
 
-BRANDING RULES (CRITICAL):
-- Refer to the brand as "Vaco by Highspring" at all times.
-- NEVER say that "Vaco is in partnership with Highspring" or mention "partnership". They are not partners; the correct brand name is "Vaco by Highspring" at all times.
+Your core goal is to teach artificial intelligence, machine learning, data science, and programming concepts to Filipino students, professionals, and enthusiasts in an engaging, interactive, and easy-to-understand manner.
 
-YOUR RESPONSE MUST BE VALID MARKDOWN. The frontend renders your output through a Markdown parser. If you do not use correct Markdown syntax, the response will look like an ugly wall of text.
+CONVERSATIONAL TONE & LANGUAGE RULES:
+- Be warm, supportive, and accessible. Feel free to use natural Taglish (a blend of English and Filipino/Tagalog) to explain complex topics simply (e.g. "Ang goal ng neural networks ay parang...", "Naku! Sobrang daling maintindihan nito!").
+- Do not sound overly formal, robotic, or dry. Make the student feel supported and inspired.
+
+PROACTIVITY & INTERACTION RULE (CRITICAL):
+- At the end of your educational explanations, you MUST actively and naturally suggest playing a mini-game or doing a flashcards session to reinforce learning and make it fun!
+- Examples: 
+  - "Gusto mo ba mag-guessing game tayo tungkol sa topic na 'to para mas lalo nating ma-gets?"
+  - "How about we play a quick trivia quiz about neural networks to test your knowledge? It'll be fun!"
+  - "I can also generate a set of interactive flashcards about these concepts. Shall we try it?"
+
+YOUR RESPONSE MUST BE VALID MARKDOWN.
 
 FORMAT RULES (MANDATORY — follow these exactly):
-
 1. Use `### Header` for section titles. NEVER use plain bold text as a section header. WRONG: `**My Section:**`. RIGHT: `### My Section`.
-
-2. Use bullet lists with `- ` (dash + space) for every list item. NEVER write list items as plain sentences one after another.
-
+2. Use bullet lists with `- ` (dash + space) for every list item.
 3. Bold the lead-in keyword of each bullet: `- **Keyword:** Description here.`
-
 4. Leave a blank line before and after every header, every list block, and every paragraph.
+5. Formulate links strictly based on the `source_type` and `source` fields from your local manifest tools output:
+   - For Websites: Use descriptive standard markdown links `[Title](url)`.
+   - For Files: Use the exact tag `[DOWNLOAD:filename]`.
+6. ANTI-HALLUCINATION: Only list local files or sources that are explicitly returned by your `get_relevant_sources` or `search_knowledge_base` tools.
 
-5. Only recommend the 1-2 MOST relevant sources when writing a detailed informational answer. Do NOT dump every source from the search results. 
-(EXCEPTION: If the user explicitly asks for a list or inventory of what is available, you MUST list all matching documents returned by the manifest tool).
-
-6. Formulate links strictly based on the `source_type` and `source` fields from the tool output:
-- **Rule for Websites:** If `source_type` is `'website'` or `'aspx'` (or if the `source` field is a URL starting with `http`): Write a standard Markdown link where the href is the exact `source` field: `[descriptive title](source)`. DO NOT use `[DOWNLOAD:...]` tags for website URLs!
-- **Rule for Files:** If `source_type` is a file (e.g., `'pdf'`, `'docx'`, `'xlsx'`, `'txt'`, `'pptx'`, `'md'`): Write the exact tag `[DOWNLOAD:source]` inline separated by a space (where `source` is the exact filename). DO NOT wrap the tag in parentheses.
-
-CRITICAL RULE ON CLASSIFYING SOURCES:
-Do NOT assume a document is a file just because it is a "case study" or "report", or a website just because it is a "blog". You MUST inspect the `source_type` and `source` fields returned by the tools to decide which rule to apply.
-
-CRITICAL ANTI-HALLUCINATION RULE:
-NEVER invent, hallucinate, or make up file names, links, or documents. You MUST ONLY reference documents that are EXPLICITLY returned by your tools. If the tools do not return any relevant documents, you must politely inform the user that you don't have those resources available. DO NOT guess file names.
-
-7. At the very end, write one line: `📎 You can view or download the reference materials below — perfect for reviewing or attaching to an email.`
-
-8. Make all bullet point summaries active and recommendation-driven. DO NOT write passive summaries starting with meta-phrases like "This document is...", "This case study details...", "This article describes...", or similar. Rephrase them to sound energetic and direct.
-   WRONG: `- **ERP Consolidation:** This document details how Vaco consolidated ERP systems.`
-   RIGHT: `- **ERP Consolidation:** Consolidates fragmented global operations into a unified ERP platform.`
-
----
-CRITICAL KNOWLEDGE BASE AWARENESS:
-At the bottom of this prompt, you will see a list of available 'Categories' and 'Industries' currently in the knowledge base.
-
-You MUST use the `get_relevant_sources` tool first whenever you are asked about a general topic or asked for a list of available documents (e.g. "What technology case studies do you have?"). 
-
-CRITICAL TOOL USAGE RULE (MANDATORY):
-You MUST ALWAYS use `get_relevant_sources` first to check if we have any documents in our knowledge base related to the user's query, EVEN IF you think you can answer it directly from your own parametric knowledge. 
-For example, if the user asks for "interview tips" or "email templates", you must first check `get_relevant_sources` using search queries like "interview" or "email". 
-Only if `get_relevant_sources` returns no documents or irrelevant documents are you allowed to answer using your general knowledge (and if you do, politely explain that you couldn't find matching files in the SharePoint knowledge base, but can offer general guidance instead).
-
-ONLY use `search_knowledge_base` when you need to dive deep into the specific content or text of those documents to answer a detailed question (e.g. "How did they implement ERP in the technology case study?").
-
-Example: 
-- User: "List our technology case studies." -> Call `get_relevant_sources`, list the titles and links, and STOP.
-- User: "What did we do in the Fortune 50 ERP case study?" -> Call `get_relevant_sources` to find it, then call `search_knowledge_base` to read its content and answer.
----
-
-HERE IS A CONCRETE EXAMPLE of a correctly formatted response:
-
----
-
-### Technology Case Studies & Resources
-
-Here are the technology resources available in our knowledge base:
-
-- [Vaco Outbound Call Center Solutions](https://www.vaco.com/resources/case-studies/outbound-call-center): Streamlines customer service operations through an integrated, holistic outsourcing strategy. *(This is a website case study: source is a URL)*
-- **Fortune 50 ERP Consolidation Case Study:** Streamlines global operations by implementing a unified ERP platform, resolving long-standing silo issues. [DOWNLOAD:Fortune 50 ERP Consolidation Case Study.pdf] *(This is a PDF case study: source is a file)*
-
-### Related Technology Blogs
-
-In addition to case studies, you can explore these articles for deeper insights:
-
-- [Preparing for Technology Disruptions](https://www.vaco.com/blog/tips-to-prepare-for-and-manage-technology-disruptions): Outlines clear strategies for maintaining operational continuity during rapid infrastructure transitions. *(This is a website blog: source is a URL)*
-
-📎 You can view or download the reference materials below — perfect for reviewing or attaching to an email.
-
----
-
-Follow that structure exactly. Do not deviate.
+TOOLS USAGE GUIDELINES:
+- **`get_relevant_sources`**: Use this first when asked for lists of documents/topics in the local knowledge base.
+- **`search_knowledge_base`**: Use this to read the actual text content of local manifest files for deep RAG queries.
+- **`google_search`**: Use this to query live web information, modern AI announcements (like new Gemini versions), coding answers, or anything not covered in local files.
+- **`create_flashcards`**: Call this tool to generate interactive cards when requested or when they accept your card review suggestion.
+- **`create_minigame`**: Call this tool to launch an interactive learning game when they want to play a game or accept your proactive quiz suggestion.
 """
 
-PITCH_SYSTEM_PROMPT = """You are a high-energy Vaco by Highspring executive. 
-The user has requested an elevator pitch. 
-You MUST use the `search_knowledge_base` tool to query for "Vaco Modular Pitch Deck" and synthesize a 30-second, high-impact elevator pitch tailored to the user's requested industry (if specified).
-Do not output long boring text. Output an inspiring, highly energetic, and concise pitch using active language.
-Include a link to the pitch deck document using the proper Markdown link format as requested in the formatting rules.
-"""
-
-VACO_VALUES_PROMPT = """You are a Vaco by Highspring AI assistant. 
-The user has triggered the Core Values Easter Egg!
-Write an inspiring 2-sentence introduction about Vaco's people-first culture, entrepreneurial spirit, and our motto: "Love what you do, where you do it".
-Do NOT list the 5 core values yourself, as the frontend UI will display them visually below your text.
-Just provide the inspiring introduction.
-"""
 
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -206,6 +150,61 @@ def search_knowledge_base(query: str, category: str = None, industry: str = None
     except Exception as e:
         return f"Error searching knowledge base: {str(e)}"
 
+@tool
+def google_search(query: str) -> str:
+    """Search Google for real-time information, news, current events, or modern state-of-the-art AI advancements.
+    Use this tool whenever the user asks about contemporary topics, news, or modern AI news that is not in the local offline files.
+    """
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client()
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=f"Search Google and summarize the latest info on: {query}",
+            config=types.GenerateContentConfig(
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            )
+        )
+        return response.text
+    except Exception as e:
+        return f"Google Search failed: {str(e)}"
+
+@tool
+def create_flashcards(topic: str, cards: list[dict[str, str]]) -> str:
+    """Create interactive, flippable flashcards to help the user learn an AI topic.
+    Parameters:
+    - topic: The name/title of the topic (e.g. 'Neural Network Architecture')
+    - cards: A list of dicts, each with 'front' (the question/concept) and 'back' (the answer/definition).
+      Example: [{'front': 'What is CNN?', 'back': 'Convolutional Neural Network used for vision.'}]
+    
+    Always use this tool when the user requests flashcards, wants to review using cards, or asks to be quizzed.
+    """
+    payload = {
+        "topic": topic,
+        "cards": cards
+    }
+    return f"[FLASHCARDS:{json.dumps(payload)}]"
+
+@tool
+def create_minigame(game_type: str, topic: str, game_data: dict[str, Any]) -> str:
+    """Create an interactive educational mini-game to test the user's AI knowledge in a fun way.
+    Parameters:
+    - game_type: Either 'guessing_game' or 'trivia'.
+    - topic: The title of the game topic (e.g. 'Machine Learning Basics')
+    - game_data: A dictionary containing the game assets:
+      - For 'guessing_game': {'word': 'OVERFITTING', 'clue': 'When a model learns training data too well.'}
+      - For 'trivia': {'question': '...', 'options': ['...', '...'], 'correct_answer': '...'}
+    
+    Always use this tool when the user asks to play a game, when you proactively suggest playing a game to test them, or when they ask for a quiz game.
+    """
+    payload = {
+        "game_type": game_type,
+        "topic": topic,
+        "data": game_data
+    }
+    return f"[MINIGAME:{json.dumps(payload)}]"
+
 def call_model(state: AgentState):
     messages = state['messages']
     new_logs = ["Model call started."]
@@ -241,7 +240,13 @@ def call_model(state: AgentState):
         
     try:
         model = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
-        model_with_tools = model.bind_tools([search_knowledge_base, get_relevant_sources])
+        model_with_tools = model.bind_tools([
+            search_knowledge_base, 
+            get_relevant_sources, 
+            google_search, 
+            create_flashcards, 
+            create_minigame
+        ])
         response = model_with_tools.invoke(processed_messages)
         if not response.content or str(response.content).strip() == "":
             if not response.tool_calls:
@@ -253,7 +258,13 @@ def call_model(state: AgentState):
 
 workflow = StateGraph(AgentState)
 workflow.add_node("agent", call_model)
-workflow.add_node("tools", ToolNode([search_knowledge_base, get_relevant_sources]))
+workflow.add_node("tools", ToolNode([
+    search_knowledge_base, 
+    get_relevant_sources, 
+    google_search, 
+    create_flashcards, 
+    create_minigame
+]))
 workflow.set_entry_point("agent")
 workflow.add_conditional_edges("agent", tools_condition)
 workflow.add_edge("tools", "agent")
@@ -277,6 +288,33 @@ class AgentService:
         from google.genai import types
         from pydantic import BaseModel, Field
         
+        # Extract custom widgets so they are not lost during synthesis
+        custom_tags = []
+        for token in ["[FLASHCARDS:", "[MINIGAME:"]:
+            idx = 0
+            while True:
+                start_idx = raw_agent_response.find(token, idx)
+                if start_idx == -1:
+                    break
+                depth = 1
+                current_idx = start_idx + len(token)
+                while current_idx < len(raw_agent_response) and depth > 0:
+                    char = raw_agent_response[current_idx]
+                    # We also need to track the outer bracket '[' that is part of the token.
+                    # Wait, our token starts with '[' which has already been read.
+                    # Since we started depth = 1 for the outer '[', any subsequent '[' increases depth,
+                    # and any ']' decreases depth. Once depth reaches 0, we found our matching closing bracket!
+                    if char == '[':
+                        depth += 1
+                    elif char == ']':
+                        depth -= 1
+                    current_idx += 1
+                if depth == 0:
+                    custom_tags.append(raw_agent_response[start_idx:current_idx])
+                    idx = current_idx
+                else:
+                    idx = start_idx + len(token)
+
         class SourceItem(BaseModel):
             title: str = Field(description="The formal title of the resource")
             source: str = Field(description="The URL or filename from the manifest/RAG source field")
@@ -372,30 +410,16 @@ class AgentService:
                             markdown_parts.append(f"- **{title}:** {summary} [DOWNLOAD:{src}]")
                     markdown_parts.append("")
                 markdown_parts.append("📎 You can view or download the reference materials below — perfect for reviewing or attaching to an email.")
-            return "\n".join(markdown_parts)
+            
+            synthesized_markdown = "\n".join(markdown_parts)
+            if custom_tags:
+                synthesized_markdown += "\n\n" + "\n\n".join(custom_tags)
+            return synthesized_markdown
         except Exception:
             return raw_agent_response
 
     def prompt_agent(self, request: AgentPromptRequest) -> AgentPromptResponse:
-        trigger = request.prompt.strip().lower()
-        if trigger in ["go orange", "go orange!"]:
-            return AgentPromptResponse(
-                response="🍊 **Vaco Corporate Orange Theme Engaged!** Love what you do, where you do it!",
-                steps=[{"type": "status", "content": "Theme swapped!"}],
-                special_event="go_orange"
-            )
-        if trigger in ["go blue", "go blue!", "go navy", "go navy!"]:
-            return AgentPromptResponse(
-                response="🔵 **Vaco Navy Theme Restored!** Ready to serve.",
-                steps=[{"type": "status", "content": "Theme swapped!"}],
-                special_event="go_navy"
-            )
-
         active_prompt = SYSTEM_PROMPT
-        if trigger.startswith("/pitch") or "pitch" in trigger:
-            active_prompt = PITCH_SYSTEM_PROMPT
-        elif trigger == "vaco!":
-            active_prompt = VACO_VALUES_PROMPT
 
         try:
             response = self.supabase.client.table("knowledge_manifest").select("category, industry").execute()
@@ -478,7 +502,12 @@ class AgentService:
         tools_used = [s["content"] for s in steps if s["type"] == "tool_call"]
         self.log_query(request.prompt, final_response, tools_used, request.session_id)
         
-        special_event = "vaco_values" if trigger == "vaco!" else None
+        special_event = None
+        if "[FLASHCARDS:" in final_response:
+            special_event = "flashcards"
+        elif "[MINIGAME:" in final_response:
+            special_event = "minigame"
+
         return AgentPromptResponse(
             response=final_response,
             steps=steps,
