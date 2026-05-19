@@ -4,9 +4,16 @@ from app.components.Posts.Application.PostHandlingService import PostHandlingSer
 from app.components.Posts.Domain.Post import PostRequest, Post
 from app.components.OnlinePythonCompiler.Application.CodeExecutionService import CodeExecutionService
 from app.components.OnlinePythonCompiler.Domain.PythonExecution import ExecutionRequest
+from app.components.Ingestion.Infrastructure.IngestionController import ingestion_router
+from app.components.Agent.Infrastructure.AgentController import agent_router
 from uuid import UUID
 
 api_router = APIRouter()
+
+# Mount new component sub-routers
+api_router.include_router(ingestion_router, prefix="/ingestion", tags=["Ingestion"])
+api_router.include_router(agent_router, prefix="/agent", tags=["Agent"])
+
 
 @api_router.post("/make-post")
 async def make_post(post: PostRequest):
