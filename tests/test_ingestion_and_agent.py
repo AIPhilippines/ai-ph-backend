@@ -104,3 +104,26 @@ def test_prompt_agent(mock_service, client):
     assert "synthesized response" in data["response"]
     assert len(data["steps"]) == 1
     mock_service.prompt_agent.assert_called_once()
+
+def test_agent_service_widget_preservation_and_events():
+    from app.components.Agent.Application.AgentService import AgentService
+    
+    service = AgentService()
+    
+    # Test depth-tracking custom tag extraction inside synthesize_final_response
+    raw_response_with_flashcards = "Here is an explanation. [FLASHCARDS:{\"topic\":\"ML\",\"cards\":[{\"front\":\"Q\",\"back\":\"A\"}]}]"
+    synthesized = service.synthesize_final_response(
+        user_query="give me cards",
+        retrieved_sources=[],
+        raw_agent_response=raw_response_with_flashcards
+    )
+    assert "[FLASHCARDS:{\"topic\":\"ML\",\"cards\":[{\"front\":\"Q\",\"back\":\"A\"}]}]" in synthesized
+
+    raw_response_with_minigame = "Let's play a game. [MINIGAME:{\"game_type\":\"guessing_game\",\"topic\":\"AI\",\"data\":{\"word\":\"A\",\"clue\":\"B\"}}]"
+    synthesized_game = service.synthesize_final_response(
+        user_query="let's play guessing game",
+        retrieved_sources=[],
+        raw_agent_response=raw_response_with_minigame
+    )
+    assert "[MINIGAME:{\"game_type\":\"guessing_game\",\"topic\":\"AI\",\"data\":{\"word\":\"A\",\"clue\":\"B\"}}]" in synthesized_game
+
