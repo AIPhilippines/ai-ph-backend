@@ -1,4 +1,4 @@
-# API Endpoint Reference Documentation
+# UNAI API & Interactive Frontend Integration Documentation
 
 All endpoints are hosted relative to the main API base path: `/api/v1`
 
@@ -9,14 +9,14 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 ### A. Ingest Website (`POST /api/v1/ingestion/website`)
 
 * **Purpose:**
-  Performs real-time BeautifulSoup text scraping of the target URL, executes Gemini-driven automatic document categorization (case study, report, blog, etc.) and industry classification, constructs an energetic active summary, splits text recursively into chunks, generates vector embeddings, inserts them into the `documents` table, and logs the source inside the `knowledge_manifest` table.
+  Scrapes public website pages via BeautifulSoup, executes Gemini automatic classification/industry tagging, chunks text, creates vector embeddings, and registers the source in Supabase for RAG querying.
 
 * **Request Body Schema (`WebsiteIngestionRequest`):**
   ```json
   {
-    "url": "https://www.vaco.com/resources/case-studies/outbound-call-center",
-    "category": "case-study", // Optional. If omitted, categorized automatically by Gemini.
-    "industry": "technology"  // Optional. If omitted, classified automatically by Gemini.
+    "url": "https://www.unai.ph/curriculum/intro-to-machine-learning",
+    "category": "course-module", // Optional. If omitted, classified by Gemini.
+    "industry": "education"       // Optional. If omitted, classified by Gemini.
   }
   ```
 
@@ -25,11 +25,11 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
   {
     "status": "success",
     "message": "Website ingested successfully",
-    "chunk_count": 4,
+    "chunk_count": 5,
     "logs": [
       "Starting website ingestion...",
-      "Scraped 15200 characters.",
-      "Successfully inserted 4 rows.",
+      "Scraped 18400 characters.",
+      "Generated embeddings for 5 chunks.",
       "Saved manifest entry."
     ]
   }
@@ -39,7 +39,7 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
   ```bash
   curl -X POST "http://localhost:8000/api/v1/ingestion/website" \
        -H "Content-Type: application/json" \
-       -d '{"url": "https://www.vaco.com/blog/tips-to-prepare-for-and-manage-technology-disruptions"}'
+       -d '{"url": "https://www.unai.ph/curriculum/deep-learning"}'
   ```
 
 ---
@@ -47,23 +47,23 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 ### B. Discover Sub-routes (`POST /api/v1/ingestion/website/sub-routes`)
 
 * **Purpose:**
-  Initiates dynamic sitemap crawler and page analysis (scanning `robots.txt`, sitemap XML indexes, or falling back to raw page anchor tags parsing) to auto-discover and list all crawlable sub-routes starting with the target website root.
+  Discovers and returns all crawlable sub-routes starting with the target website base path.
 
 * **Request Body Schema (`WebsiteSubroutesRequest`):**
   ```json
   {
-    "url": "https://www.vaco.com"
+    "url": "https://www.unai.ph"
   }
   ```
 
 * **Response Body Schema (`WebsiteSubroutesResponse`):**
   ```json
   {
-    "url": "https://www.vaco.com",
+    "url": "https://www.unai.ph",
     "sub_routes": [
-      "https://www.vaco.com/about",
-      "https://www.vaco.com/blog",
-      "https://www.vaco.com/services"
+      "https://www.unai.ph/about",
+      "https://www.unai.ph/blog",
+      "https://www.unai.ph/contact"
     ]
   }
   ```
@@ -72,7 +72,7 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
   ```bash
   curl -X POST "http://localhost:8000/api/v1/ingestion/website/sub-routes" \
        -H "Content-Type: application/json" \
-       -d '{"url": "https://www.vaco.com"}'
+       -d '{"url": "https://www.unai.ph"}'
   ```
 
 ---
@@ -80,7 +80,7 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 ### C. Ingest File (`POST /api/v1/ingestion/file`)
 
 * **Purpose:**
-  Accepts binary form uploads supporting standard text files (`.txt`, `.md`), Word files (`.docx`), Excel worksheets (`.xlsx`), PowerPoint slides (`.pptx`), and PDF files (`.pdf`). Incorporates high-accuracy Gemini Multimodal OCR fallback for scanned/sparse PDFs. Uploads the raw file to Supabase storage bucket `documents/uploads/` and handles vector chunk indexing, embedding generation, and manifest logging.
+  Accepts raw multi-format file uploads (`.pdf`, `.docx`, `.pptx`, `.xlsx`, `.txt`, `.md`). Handles PDF OCR scans via Gemini and logs vectors and storage paths in Supabase.
 
 * **Request Payload (`multipart/form-data`):**
   - `file`: File Binary Object (Required)
@@ -89,13 +89,12 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
   ```json
   {
     "status": "success",
-    "message": "File Fortune 50 ERP Consolidation Case Study.pdf ingested successfully",
-    "chunk_count": 8,
+    "message": "File Supervised Learning Guide.pdf ingested successfully",
+    "chunk_count": 6,
     "logs": [
-      "Starting ingestion for Fortune 50 ERP Consolidation Case Study.pdf",
-      "Uploaded to storage: uploads/Fortune 50 ERP Consolidation Case Study.pdf",
-      "Successfully inserted 8 rows.",
-      "Saved manifest entry."
+      "Starting ingestion for Supervised Learning Guide.pdf",
+      "Uploaded file to storage: uploads/Supervised Learning Guide.pdf",
+      "Successfully parsed PDF pages."
     ]
   }
   ```
@@ -103,7 +102,7 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 * **Sample cURL Command:**
   ```bash
   curl -X POST "http://localhost:8000/api/v1/ingestion/file" \
-       -F "file=@/path/to/my_presentation.pptx"
+       -F "file=@/path/to/Intro_to_AI.pptx"
   ```
 
 ---
@@ -111,29 +110,23 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 ### D. Get Ingested Documents (`GET /api/v1/ingestion/documents`)
 
 * **Purpose:**
-  Paginates and fetches all currently indexed vector chunks, textual content snippets, and source/classification metadata records stored in Supabase to be rendered inside the frontend administrative panel.
+  Paginates and lists all currently indexed vector chunks, metadata, categories, and source assets.
 
 * **Response Body Schema (`List[IngestedDocResponse]`):**
   ```json
   [
     {
       "id": "e4f8841a-8ab4-4fcd-bce8-641fa09312ab",
-      "content": "Consolidates global technology assets into a unified cloud matrix.",
+      "content": "Supervised learning uses labeled training datasets to train algorithms.",
       "metadata": {
-        "source": "Fortune 50 ERP Consolidation Case Study.pdf",
+        "source": "Supervised Learning Guide.pdf",
         "type": "pdf",
-        "title": "Fortune 50 ERP Consolidation Case Study",
-        "category": "case-study",
-        "industry": "technology",
-        "storage_path": "uploads/Fortune 50 ERP Consolidation Case Study.pdf"
+        "title": "Supervised Learning Guide",
+        "category": "education",
+        "industry": "artificial-intelligence"
       }
     }
   ]
-  ```
-
-* **Sample cURL Command:**
-  ```bash
-  curl -X GET "http://localhost:8000/api/v1/ingestion/documents"
   ```
 
 ---
@@ -143,35 +136,31 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
 ### A. Prompt AI Agent (`POST /api/v1/agent/prompt`)
 
 * **Purpose:**
-  Queries the conversational RAG agent. Triggers a compiled LangGraph workflow state machine that binds `get_relevant_sources` (metadata summary manifest lookup) and `search_knowledge_base` (vector search lookup) as graph tools. Executes a structured output synthesizer to generate a clean, responsive Markdown body with strict download links (`[DOWNLOAD:filename.ext]` for files and `[title](url)` for websites). Handles Easter eggs triggers (`go orange`, `go blue`, `vaco!`) for UI events.
+  Primary chat endpoint. Triggers the stateful LangGraph AI Teacher. Connects vector RAG lookups, live Google Search capabilities, and interactive flashcard/minigame generators.
 
 * **Request Body Schema (`AgentPromptRequest`):**
   ```json
   {
-    "prompt": "What technology resources do we have available in the healthcare industry?",
-    "session_id": "optional-session-uuid" // Optional, default is "default"
+    "prompt": "Can you give me flashcards about supervised learning?",
+    "session_id": "professor-al-session"
   }
   ```
 
 * **Response Body Schema (`AgentPromptResponse`):**
   ```json
   {
-    "response": "### Healthcare Technology Resources\n\nHere are the healthcare files and links:\n\n- **Healthcare Cloud Architecture Study:** Designs and deploys standard cloud-native secure networks. [DOWNLOAD:Healthcare Cloud Architecture Study.pdf]\n- [Vaco Outbound Solutions](https://www.vaco.com/resources): Integrates customer service outsource solutions.\n\n📎 You can view or download the reference materials below — perfect for reviewing or attaching to an email.",
+    "response": "Here are 3 flashcards to help you master supervised learning concepts! [FLASHCARDS:{\"topic\":\"Supervised Learning basics\",\"cards\":[{\"front\":\"What is Supervised Learning?\",\"back\":\"A type of ML where the model trains on labeled data.\"},{\"front\":\"What is Labeled Data?\",\"back\":\"Dataset that has both input variables and the target output.\"},{\"front\":\"Give two common tasks.\",\"back\":\"Classification and Regression.\"}]}]",
     "steps": [
       {
         "type": "status",
-        "content": "Node 'agent' finished."
+        "content": "UNAI Agent activated."
       },
       {
         "type": "tool_call",
-        "content": "Tool Call Request: get_relevant_sources"
-      },
-      {
-        "type": "log",
-        "content": "Model call started."
+        "content": "Tool Call Request: create_flashcards"
       }
     ],
-    "special_event": null // String. "go_orange", "go_navy", "vaco_values", or null
+    "special_event": null
   }
   ```
 
@@ -179,5 +168,243 @@ All endpoints are hosted relative to the main API base path: `/api/v1`
   ```bash
   curl -X POST "http://localhost:8000/api/v1/agent/prompt" \
        -H "Content-Type: application/json" \
-       -d '{"prompt": "vaco!", "session_id": "demo-session"}'
+       -d '{"prompt": "Let\u0027s play a guessing game about AI layers", "session_id": "session-123"}'
   ```
+
+---
+
+## 3. Frontend Rich UI Integration Guide
+
+To render flashcards and educational mini-games within the chat flow, the frontend parses the standard Markdown string for custom string tags.
+
+### A. Flashcards Component Guide
+
+#### Custom Tag Format:
+`[FLASHCARDS:{"topic": "Supervised Learning", "cards": [{"front": "Q?", "back": "A!"}]}]`
+
+#### CSS 3D Flipping Styles:
+```css
+/* Card Container */
+.flashcard-wrapper {
+  perspective: 1000px;
+}
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+/* Flip state class */
+.flashcard-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flashcard-front, .flashcard-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  border-radius: 20px;
+}
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+```
+
+#### React Component Implementation:
+```tsx
+interface Card {
+  front: string;
+  back: string;
+}
+
+export function FlashcardsWidget({ topic, cards }: { topic: string; cards: Card[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
+
+  const currentCard = cards[currentIndex];
+
+  return (
+    <div className="flex flex-col items-center bg-slate-50 dark:bg-black/20 p-6 rounded-3xl border border-app-border">
+      <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)] mb-4">🎴 Flashcard: {topic}</h4>
+      
+      {/* 3D Flipping Card Wrapper */}
+      <div 
+        onClick={() => setIsFlipped(!isFlipped)} 
+        className="w-full max-w-sm h-48 cursor-pointer flashcard-wrapper select-none"
+      >
+        <div className={`flashcard-inner w-full h-full duration-500 ${isFlipped ? 'flipped' : ''}`}>
+          {/* Front Side */}
+          <div className="flashcard-front absolute inset-0 bg-white dark:bg-[#121212] border border-app-border p-6 flex flex-col justify-center items-center shadow-md">
+            <span className="text-[10px] text-app-muted uppercase font-bold tracking-wider mb-2">Question / Concept</span>
+            <p className="text-sm font-semibold text-app-text text-center">{currentCard.front}</p>
+            <span className="text-[9px] text-[var(--color-accent)] font-medium mt-4">Click to flip 🔄</span>
+          </div>
+
+          {/* Back Side */}
+          <div className="flashcard-back absolute inset-0 bg-[var(--color-accent)]/5 dark:bg-slate-900 border-2 border-[var(--color-accent)]/20 p-6 flex flex-col justify-center items-center shadow-md">
+            <span className="text-[10px] text-[var(--color-accent)] uppercase font-bold tracking-wider mb-2">Answer / Definition</span>
+            <p className="text-sm font-semibold text-app-text text-center">{currentCard.back}</p>
+            <span className="text-[9px] text-app-muted font-medium mt-4">Click to see question 🔄</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Pagination Controls */}
+      <div className="flex items-center gap-4 mt-6">
+        <button 
+          disabled={currentIndex === 0} 
+          onClick={() => { setIsFlipped(false); setCurrentIndex(p => p - 1); }}
+          className="px-3 py-1.5 rounded-lg bg-app-bg border text-xs disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <span className="text-xs text-app-muted font-mono">{currentIndex + 1} / {cards.length}</span>
+        <button 
+          disabled={currentIndex === cards.length - 1} 
+          onClick={() => { setIsFlipped(false); setCurrentIndex(p => p + 1); }}
+          className="px-3 py-1.5 rounded-lg bg-app-bg border text-xs disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### B. Stateful Educational Mini-Games Component Guide
+
+#### Custom Tag Format:
+`[MINIGAME:{"game_type": "guessing_game", "data": {"word": "OVERFITTING", "clue": "..."}}]`
+
+#### React Stateful Component Implementation (3-Heart Guessing Game):
+```tsx
+interface GameData {
+  word: string;
+  clue: string;
+}
+
+export function GuessingGameWidget({ data }: { data: GameData }) {
+  const targetWord = data.word.toUpperCase();
+  const [guess, setGuess] = useState('');
+  const [tries, setTries] = useState(3);
+  const [revealedLetters, setRevealedLetters] = useState<string[]>([]);
+  const [gameState, setGameState] = useState<'playing' | 'won' | 'lost'>('playing');
+
+  // Submit letter or full word guess
+  const handleGuessSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guess || gameState !== 'playing') return;
+
+    const gClean = guess.toUpperCase().trim();
+    setGuess('');
+
+    // Full word guess
+    if (gClean === targetWord) {
+      setRevealedLetters(targetWord.split(''));
+      setGameState('won');
+      return;
+    }
+
+    // Single letter guess
+    if (gClean.length === 1) {
+      if (targetWord.includes(gClean)) {
+        const nextLetters = [...revealedLetters, gClean];
+        setRevealedLetters(nextLetters);
+        
+        // Check if all distinct letters guessed
+        const allGuessed = targetWord.split('').every(char => char === ' ' || nextLetters.includes(char));
+        if (allGuessed) {
+          setGameState('won');
+        }
+      } else {
+        const nextTries = tries - 1;
+        setTries(nextTries);
+        if (nextTries <= 0) setGameState('lost');
+      }
+    } else {
+      // Wrong full word guess
+      const nextTries = tries - 1;
+      setTries(nextTries);
+      if (nextTries <= 0) setGameState('lost');
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center bg-slate-50 dark:bg-black/20 p-6 rounded-3xl border border-app-border w-full max-w-md">
+      
+      {/* Game Header with Heart Lives indicator */}
+      <div className="w-full flex justify-between items-center mb-4">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-accent)]">🎮 Guess the AI Term</h4>
+        <div className="flex gap-1">
+          {[1, 2, 3].map((heartIdx) => (
+            <span key={heartIdx} className="text-base transition-all duration-300">
+              {heartIdx <= tries ? '❤️' : '💔'}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-[#121212] border border-app-border rounded-2xl p-5 w-full text-center shadow-sm">
+        <p className="text-xs text-app-muted uppercase font-bold tracking-wider mb-2">Clue / Kahulugan</p>
+        <p className="text-sm font-medium text-app-text leading-relaxed mb-6">"{data.clue}"</p>
+
+        {/* Word Placeholders */}
+        <div className="flex justify-center gap-1.5 mb-6 overflow-x-auto py-1">
+          {targetWord.split('').map((char, index) => {
+            if (char === ' ') return <span key={index} className="w-4" />;
+            const isRevealed = revealedLetters.includes(char) || gameState === 'lost';
+            return (
+              <span 
+                key={index} 
+                className={`w-8 h-9 border-b-2 flex items-center justify-center font-bold text-base transition-colors ${
+                  isRevealed 
+                    ? 'border-[var(--color-accent)] text-app-text' 
+                    : 'border-neutral-300 dark:border-neutral-700 text-transparent'
+                }`}
+              >
+                {char}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Interaction Panel */}
+        {gameState === 'playing' && (
+          <form onSubmit={handleGuessSubmit} className="flex gap-2">
+            <input
+              type="text"
+              maxLength={targetWord.length}
+              value={guess}
+              onChange={e => setGuess(e.target.value)}
+              placeholder="Sulat ng letra o buong salita..."
+              className="flex-1 bg-app-bg-soft border border-app-border rounded-xl py-2 px-3 text-xs sm:text-sm text-app-text focus:border-[var(--color-accent)]/80 outline-none"
+            />
+            <button 
+              type="submit" 
+              className="bg-[var(--color-accent)] text-white font-bold text-xs uppercase px-4 py-2 rounded-xl"
+            >
+              Guess
+            </button>
+          </form>
+        )}
+
+        {/* Game End States with celebration styling */}
+        {gameState === 'won' && (
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl text-xs font-bold animate-bounce mt-2 select-none">
+            🎉 Mahusay! You guessed the correct term: <strong>{targetWord}</strong>!
+          </div>
+        )}
+        {gameState === 'lost' && (
+          <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-bold mt-2 select-none">
+            😢 Sayang, subukan uli! The correct term was: <strong>{targetWord}</strong>.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
