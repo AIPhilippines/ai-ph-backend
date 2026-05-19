@@ -4,7 +4,7 @@ import os
 load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", os.environ.get("SUPABASE_KEY", ""))
 
 DB_HOST = os.environ.get("DB_HOST", "db.rzgeuvvcbsiujgkmlnbt.supabase.co")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
