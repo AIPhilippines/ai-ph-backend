@@ -3,7 +3,7 @@ import json
 import operator
 from typing import Annotated, TypedDict, List, Dict, Any, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -16,17 +16,21 @@ shared_db = Supabase()
 SYSTEM_PROMPT = """You are Professor Al, a friendly, encouraging, and highly knowledgeable AI Teacher representing UNAI (You and AI).
 UNAI is a pioneering educational initiative with a deep-rooted mission: **"Teaching AI. For Filipinos. By Filipinos."**
 
-Your core goal is to teach artificial intelligence, machine learning, data science, and programming concepts to Filipino students, professionals, and enthusiasts in an engaging, interactive, and easy-to-understand manner.
+Your core goal is to teach artificial intelligence, machine learning, data science, mathematics, computer science, and programming concepts. 
+
+TEACHING ANY SUBJECT & THE "AI SPARK" RULE (CRITICAL):
+- You are a versatile educator! You can teach *any* subject the user asks about (e.g., English vocabulary, grammar, basic math, algebra, biology, history). You are not restricted to only AI.
+- **Subtle AI Connection (The AI Spark):** Whenever the user asks a question, requests flashcards, plays a game, or requests a presentation on a non-AI topic, you must subtly, briefly, and concisely connect the topic back to AI in your introductory or closing text. For example, explain how AI was used to dynamically design this game, how natural language processing (NLP) models English meanings, or how machine learning accelerates learning in mathematics. Keep this reference natural, short (1-2 sentences), and positive to inspire curiosity in AI!
 
 CONVERSATIONAL TONE & LANGUAGE RULES:
 - Be warm, supportive, and accessible. Feel free to use natural Taglish (a blend of English and Filipino/Tagalog) to explain complex topics simply (e.g. "Ang goal ng neural networks ay parang...", "Naku! Sobrang daling maintindihan nito!").
 - Do not sound overly formal, robotic, or dry. Make the student feel supported and inspired.
 
 PROACTIVITY & INTERACTION RULE (CRITICAL):
-- At the end of your educational explanations, you MUST actively and naturally suggest playing a mini-game or doing a flashcards session to reinforce learning and make it fun!
+- At the end of your educational explanations, you MUST actively and naturally suggest playing a mini-game, doing a flashcards session, or starting a slide-by-slide mini-presentation to reinforce learning and make it fun!
 - Examples: 
   - "Gusto mo ba mag-guessing game tayo tungkol sa topic na 'to para mas lalo nating ma-gets?"
-  - "How about we play a quick trivia quiz about neural networks to test your knowledge? It'll be fun!"
+  - "How about we review this using an interactive slide presentation? Pwede mo rin itong i-download as PDF!"
   - "I can also generate a set of interactive flashcards about these concepts. Shall we try it?"
 
 YOUR RESPONSE MUST BE VALID MARKDOWN.
@@ -41,12 +45,43 @@ FORMAT RULES (MANDATORY — follow these exactly):
    - For Files: Use the exact tag `[DOWNLOAD:filename]`.
 6. ANTI-HALLUCINATION: Only list local files or sources that are explicitly returned by your `get_relevant_sources` or `search_knowledge_base` tools.
 
+VISUAL WIDGETS INTEGRATION PROTOCOL (CRITICAL):
+- When you decide to create flashcards, play a game, or show a structured presentation (either because the user asked or you proactively suggested it and they agreed), you MUST call the respective tool:
+  - `create_flashcards` to generate flashcards.
+  - `create_minigame` to generate a guessing game or trivia game.
+  - `create_presentation` to generate slide-by-slide structured lessons.
+- **NO DUPLICATION IN RAW TEXT:** Do NOT print, list, or duplicate the flashcard questions and answers, minigame questions/options, or slide presentation bullet text in raw text form inside your conversational response. Since the frontend renders the interactive widget from the bracket payload, listing them in raw text is completely redundant and cluttered. Simply introduce the interactive tool and let the widget do the talking.
+- **CLIFFHANGER-DRIVEN PRESENTATIONS (CRITICAL):** When building a presentation, you must structure the slides sequentially to encourage active curiosity. Pose a cliffhanger, active question, or thought-provoking prompt at the end of slide N (e.g. "But how does this work?", "Why is this so?"), and reveal/resolve the answer on slide N+1. This active recall method makes lessons highly engaging! Presentations can be up to 15 slides maximum.
+- **RICH SLIDES (DROPDOWNS & TOOLTIPS):** Fill slides with rich, deep, and highly educational text content so that notes are complete and comprehensive! To prevent slides from looking visually cluttered or overwhelming in the UI:
+  1. Use the `dropdowns` parameter to hide secondary, long-form, or detailed deep-dive explanations. They will remain compact toggles on the screen but automatically expand in printed PDFs!
+  2. Use the `tooltips` parameter to define key terminology. Dotted underlines will appear in the UI allowing interactive hover definition definitions. These definitions will automatically compile as beautiful glossary notes at the bottom of the page of that specific slide in the exported PDF notes!
+- **NO EMOJIS IN SLIDES (CRITICAL):** Do NOT include any emojis (such as 🔍, 🧪, 🧬, ➡️, etc.) inside the titles, content, dropdown headers, or dropdown bodies of the slideshow presentations. Presentations must maintain a clean, formal, academic, and modern aesthetic without decorative icons or emojis in the slide data.
+- **CRITICAL:** When the tool executes and returns the custom bracket string (e.g., `[FLASHCARDS:...` or `[PRESENTATION:...`), you MUST append this EXACT bracket string at the very end of your conversational response. Do NOT edit, truncate, summarize, or alter this string! Simply drop it in.
+
+EXAMPLE WIDGET RESPONSES:
+
+Example 1 (Flashcards - Algebra Topic with Math AI Spark):
+"Ayan! Gagawa ako ng flashcards para sa atin tungkol sa solving basic algebraic equations. Sobrang ganda nitong gamitin para mag-practice! Alam mo ba na ang mga algebraic formulas na ito ang pundasyon kung paano gumagana ang machine learning algorithms sa AI? Napaka-cool, diba? Let's review! 😊
+
+[FLASHCARDS:{"topic":"Basic Equations","cards":[{"front":"Solve for x: x + 5 = 12","back":"x = 7"},{"front":"Solve for y: 2y = 10","back":"y = 5"},{"front":"Solve for a: a - 3 = 4","back":"a = 7"}]}]"
+
+Example 2 (Guessing Game - English Vocabulary Topic with NLP AI Spark):
+"Sige! Maglaro tayo ng guessing game tungkol sa English synonyms and vocabulary. Heto ang iyong clue! Alam mo ba na sa AI, ginagamit namin ang Natural Language Processing (NLP) para maintindihan ng computer ang kahulugan ng mga salitang ito tulad ng ginagawa natin ngayon? Gamitin mo ang iyong 3 puso ❤️❤️❤️ para hulaan ang term! Good luck!
+
+[MINIGAME:{"game_type":"guessing_game","topic":"English Vocabulary","data":{"word":"BENEVOLENT","clue":"A word meaning kind, well-meaning, and generous."}}]"
+
+Example 3 (Presentation - Biological Sexes with Biology AI Spark):
+"Mabuting balita! Inihanda ko ang isang interactive slide presentation para sa iyo tungkol sa Biological Sexes. Alam mo ba na sa modernong medisina at biology, gumagamit na rin kami ng AI machine learning models para suriin ang biological gene markers at cell mutations na nauugnay sa chromosome biological types? Napakalaki ng naitutulong nito sa digital health! Buksan natin ang slides para mag-aral. Pwede mo rin itong i-download as PDF! 📖😊
+
+[PRESENTATION:{"topic":"Biological Sexes","slides":[{"slide_number":1,"title":"The Binary Concept","content":"There are 2 main biological sexes found across human biology: Males and Females. Underneath the biological surface, genetic chromosomes play a major role. Let's look closer!","dropdowns":[{"header":"XY vs XX Chromosomes","body":"Males typically carry XY sex chromosomes, while females carry XX chromosomes. These determine biological characteristics and anatomical differences from the embryonic stage."},{"header":"Hormones Influence","body":"Hormonal chemical pathways such as testosterone and estrogen act as signals during physical growth to direct cellular differentiation."}],"tooltips":[{"word":"Chromosomes","definition":"DNA molecules that contain the genetic instructions for cell growth and functions."},{"word":"Hormones","definition":"Chemical messengers circulating in the bloodstream that regulate physiological activity."}]},{"slide_number":2,"title":"Curious Differences","content":"Each biological group has evolved unique anatomical strengths and genetic pathways.\n\nBut why does this split exist in nature? What is the evolutionary cause? Let's find out.","tooltips":[{"word":"evolutionary","definition":"Relating to the gradual development and genetic survival adaptions of organisms over generations."}]},{"slide_number":3,"title":"The Resilient Answer","content":"Because genetic diversity is our primary shield against extinction! By combining XY and XX genetic markers in children, populations acquire high resilience against illnesses and pathogens.","dropdowns":[{"header":"How AI Accelerates Biology","body":"Advanced AI neural networks are now used to analyze chromosome markers, predicting cell anomalies and accelerating medical breakthroughs."}],"tooltips":[{"word":"resilience","definition":"The capacity of a biological organism to recover from illness, infections, or environmental stress."}]}]}]"
+
 TOOLS USAGE GUIDELINES:
 - **`get_relevant_sources`**: Use this first when asked for lists of documents/topics in the local knowledge base.
 - **`search_knowledge_base`**: Use this to read the actual text content of local manifest files for deep RAG queries.
-- **`google_search`**: Use this to query live web information, modern AI announcements (like new Gemini versions), coding answers, or anything not covered in local files.
+- **`google_search`**: Use this to query live web information, mathematics concepts (like algebra or calculus), modern AI announcements, coding answers, or anything not covered in local files.
 - **`create_flashcards`**: Call this tool to generate interactive cards when requested or when they accept your card review suggestion.
 - **`create_minigame`**: Call this tool to launch an interactive learning game when they want to play a game or accept your proactive quiz suggestion.
+- **`create_presentation`**: Call this tool to generate a slide-based interactive presentation/booklet when they want slides, a structured presentation, or a PDF booklet on any topic.
 """
 
 
@@ -205,6 +240,33 @@ def create_minigame(game_type: str, topic: str, game_data: dict[str, Any]) -> st
     }
     return f"[MINIGAME:{json.dumps(payload)}]"
 
+@tool
+def create_presentation(topic: str, slides: list[dict[str, Any]]) -> str:
+    """Create an interactive, slide-by-slide learning presentation about a topic.
+    The presentation should be structured so each slide teaches a concept and ends with a cliffhanger, 
+    question, or prompt that the NEXT slide resolves, encouraging curiosity and active pondering.
+    Parameters:
+    - topic: The overall title of the presentation (e.g. 'Types of Biological Sexes', 'How Neurons Work')
+    - slides: A list of dicts, each representing a slide:
+      - slide_number: The sequential integer number (1-based)
+      - title: A short title of this slide (e.g. 'The Big Question' or 'The Revealing Truth')
+      - content: The core educational content of this slide, written in valid Markdown. Keep this descriptive!
+      - dropdowns: (Optional) A list of dicts for expandable compact sub-topics on this slide:
+        - header: A short title of this compact sub-topic (e.g. '🔍 What are Chromosomes?')
+        - body: Detailed rich text explanation that is collapsed under the header in the UI, but automatically expanded in downloaded PDFs.
+      - tooltips: (Optional) A list of dicts defining key vocabulary terms for hover definitions on this slide:
+        - word: The exact word/term that appears in the content or dropdowns.
+        - definition: A simple explanation of the term. These are underlined in the UI and compiled as page notes at the bottom of the printed slide.
+    
+    Presentations can have a MAXIMUM of 15 slides.
+    Always call this tool when the user requests a slide presentation, slideshow, visual course, structured lesson, or slides on a topic.
+    """
+    payload = {
+        "topic": topic,
+        "slides": slides
+    }
+    return f"[PRESENTATION:{json.dumps(payload)}]"
+
 def call_model(state: AgentState):
     messages = state['messages']
     new_logs = ["Model call started."]
@@ -245,7 +307,8 @@ def call_model(state: AgentState):
             get_relevant_sources, 
             google_search, 
             create_flashcards, 
-            create_minigame
+            create_minigame,
+            create_presentation
         ])
         response = model_with_tools.invoke(processed_messages)
         if not response.content or str(response.content).strip() == "":
@@ -263,7 +326,8 @@ workflow.add_node("tools", ToolNode([
     get_relevant_sources, 
     google_search, 
     create_flashcards, 
-    create_minigame
+    create_minigame,
+    create_presentation
 ]))
 workflow.set_entry_point("agent")
 workflow.add_conditional_edges("agent", tools_condition)
@@ -290,7 +354,7 @@ class AgentService:
         
         # Extract custom widgets so they are not lost during synthesis
         custom_tags = []
-        for token in ["[FLASHCARDS:", "[MINIGAME:"]:
+        for token in ["[FLASHCARDS:", "[MINIGAME:", "[PRESENTATION:"]:
             idx = 0
             while True:
                 start_idx = raw_agent_response.find(token, idx)
@@ -438,9 +502,32 @@ class AgentService:
         except Exception:
             full_prompt = active_prompt
 
+        # Retrieve recent conversation thread from query_logs for this session to build memory context
+        history_messages = []
+        if request.session_id and request.session_id != "default":
+            try:
+                hist_resp = self.supabase.client.table("query_logs") \
+                    .select("user_query, agent_response, id") \
+                    .eq("session_id", request.session_id) \
+                    .order("id", desc=False) \
+                    .limit(10) \
+                    .execute()
+                
+                if hist_resp.data:
+                    for row in hist_resp.data:
+                        user_q = row.get("user_query")
+                        agent_r = row.get("agent_response")
+                        if user_q:
+                            history_messages.append(HumanMessage(content=user_q))
+                        if agent_r:
+                            history_messages.append(AIMessage(content=agent_r))
+            except Exception:
+                pass
+
         initial_state = {
             "messages": [
                 SystemMessage(content=full_prompt),
+                *history_messages,
                 HumanMessage(content=request.prompt)
             ],
             "logs": [f"Session {request.session_id} started."]
@@ -449,6 +536,7 @@ class AgentService:
         final_response = ""
         steps = []
         retrieved_docs = []
+        tool_widget_tags = []
 
         try:
             for event in app_graph.stream(initial_state):
@@ -466,6 +554,31 @@ class AgentService:
                             final_response = message.content
                     if node_name == "tools":
                         for msg in output["messages"]:
+                            # Intercept any interactive visual widget tags produced by the educational tools
+                            content_str = str(msg.content)
+                            if "[FLASHCARDS:" in content_str or "[MINIGAME:" in content_str or "[PRESENTATION:" in content_str:
+                                for token in ["[FLASHCARDS:", "[MINIGAME:", "[PRESENTATION:"]:
+                                    idx = 0
+                                    while True:
+                                        start_idx = content_str.find(token, idx)
+                                        if start_idx == -1:
+                                            break
+                                        depth = 1
+                                        current_idx = start_idx + len(token)
+                                        while current_idx < len(content_str) and depth > 0:
+                                            char = content_str[current_idx]
+                                            if char == '[':
+                                                depth += 1
+                                            elif char == ']':
+                                                depth -= 1
+                                            current_idx += 1
+                                        if depth == 0:
+                                            tag = content_str[start_idx:current_idx]
+                                            if tag not in tool_widget_tags:
+                                                tool_widget_tags.append(tag)
+                                            idx = current_idx
+                                        else:
+                                            idx = start_idx + len(token)
                             try:
                                 chunks = json.loads(msg.content)
                                 if isinstance(chunks, list):
@@ -499,6 +612,14 @@ class AgentService:
         if retrieved_docs:
             final_response = self.synthesize_final_response(request.prompt, retrieved_docs, final_response)
 
+        # Fail-safe widget tag guarantee: append any tool-generated widgets if they are missing
+        for tag in tool_widget_tags:
+            if tag not in final_response:
+                # If final_response is extremely short (e.g. '.', '-', or empty), replace with friendly Taglish intro
+                if final_response.strip() in [".", "-", ""]:
+                    final_response = "Ayan! Inihanda ko ang interactive activity na ito para sa iyo tungkol sa ating pinag-aaralan. Let's practice and have fun! 😊"
+                final_response += "\n\n" + tag
+
         tools_used = [s["content"] for s in steps if s["type"] == "tool_call"]
         self.log_query(request.prompt, final_response, tools_used, request.session_id)
         
@@ -507,6 +628,8 @@ class AgentService:
             special_event = "flashcards"
         elif "[MINIGAME:" in final_response:
             special_event = "minigame"
+        elif "[PRESENTATION:" in final_response:
+            special_event = "presentation"
 
         return AgentPromptResponse(
             response=final_response,
