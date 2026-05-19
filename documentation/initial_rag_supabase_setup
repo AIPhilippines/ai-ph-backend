@@ -1,0 +1,126 @@
+# Supabase Database Initialization Script
+
+Run the following SQL queries inside your Supabase SQL Editor to prepare your database environment for vector storage, document indexing, and RAG search.
+
+---
+
+## 1. Extensions & Core Storage Tables
+
+First, enable the vector extension and construct the primary storage and manifest logging tables:
+
+```sql
+-- Enable the vector database extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Create vector document chunk storage table
+CREATE TABLE IF NOT EXISTS documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content TEXT NOT NULL,
+  metadata JSONB NOT NULL,
+  embedding VECTOR(1536) NOT NULL
+);
+
+-- Create knowledge manifest tracking table
+CREATE TABLE IF NOT EXISTS knowledge_manifest (
+  id SERIAL PRIMARY KEY,
+  source TEXT UNIQUE NOT NULL,
+  source_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  industry TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  chunk_count INT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create agent conversational transaction logging table
+CREATE TABLE IF NOT EXISTS query_logs (
+  id SERIAL PRIMARY KEY,
+  user_query TEXT NOT NULL,
+  agent_response TEXT NOT NULL,
+  tools_used JSONB NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## 2. High-Performance Indexing
+
+Construct a hierarchical navigable small world (HNSW) index on the embedding array to facilitate sub-millisecond similarity lookups:
+
+```sql
+-- HNSW index optimized for cosine similarity queries
+CREATE INDEX IF NOT EXISTS documents_embedding_idx ON documents 
+USING hnsw (embedding vector_cosine_ops);
+```
+
+---
+
+## 3. Remote Procedure Calls (RPCs)
+
+Deploy the database functions which Gemini uses to perform semantic search queries:
+
+### Generic Search RPC (`match_documents`)
+
+```sql
+CREATE OR REPLACE FUNCTION match_documents (
+  query_embedding VECTOR(1536),
+  match_threshold FLOAT,
+  match_count INT
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  metadata JSONB,
+  similarity FLOAT
+)
+LANGUAGE sql STABLE
+AS $$
+  SELECT
+    documents.id,
+    documents.content,
+    documents.metadata,
+    1 - (documents.embedding <=> query_embedding) AS similarity
+  FROM documents
+  WHERE 1 - (documents.embedding <=> query_embedding) > match_threshold
+  ORDER BY documents.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+```
+
+### Filtered Search RPC (`match_documents_filtered`)
+
+```sql
+CREATE OR REPLACE FUNCTION match_documents_filtered (
+  query_embedding VECTOR(1536),
+  match_threshold FLOAT,
+  match_count INT,
+  filter_category TEXT,
+  filter_industry TEXT
+)
+RETURNS TABLE (
+  id UUID,
+  content TEXT,
+  metadata JSONB,
+  similarity FLOAT
+)
+LANGUAGE plpgsql STABLE
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    documents.id,
+    documents.content,
+    documents.metadata,
+    1 - (documents.embedding <=> query_embedding) AS similarity
+  FROM documents
+  WHERE 1 - (documents.embedding <=> query_embedding) > match_threshold
+    AND (filter_category IS NULL OR filter_category = '' OR documents.metadata->>'category' = filter_category)
+    AND (filter_industry IS NULL OR filter_industry = '' OR documents.metadata->>'industry' = filter_industry)
+  ORDER BY documents.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+```

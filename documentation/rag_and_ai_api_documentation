@@ -1,0 +1,183 @@
+# API Endpoint Reference Documentation
+
+All endpoints are hosted relative to the main API base path: `/api/v1`
+
+---
+
+## 1. Ingestion Component Endpoints
+
+### A. Ingest Website (`POST /api/v1/ingestion/website`)
+
+* **Purpose:**
+  Performs real-time BeautifulSoup text scraping of the target URL, executes Gemini-driven automatic document categorization (case study, report, blog, etc.) and industry classification, constructs an energetic active summary, splits text recursively into chunks, generates vector embeddings, inserts them into the `documents` table, and logs the source inside the `knowledge_manifest` table.
+
+* **Request Body Schema (`WebsiteIngestionRequest`):**
+  ```json
+  {
+    "url": "https://www.vaco.com/resources/case-studies/outbound-call-center",
+    "category": "case-study", // Optional. If omitted, categorized automatically by Gemini.
+    "industry": "technology"  // Optional. If omitted, classified automatically by Gemini.
+  }
+  ```
+
+* **Response Body Schema (`IngestionResponse`):**
+  ```json
+  {
+    "status": "success",
+    "message": "Website ingested successfully",
+    "chunk_count": 4,
+    "logs": [
+      "Starting website ingestion...",
+      "Scraped 15200 characters.",
+      "Successfully inserted 4 rows.",
+      "Saved manifest entry."
+    ]
+  }
+  ```
+
+* **Sample cURL Command:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/ingestion/website" \
+       -H "Content-Type: application/json" \
+       -d '{"url": "https://www.vaco.com/blog/tips-to-prepare-for-and-manage-technology-disruptions"}'
+  ```
+
+---
+
+### B. Discover Sub-routes (`POST /api/v1/ingestion/website/sub-routes`)
+
+* **Purpose:**
+  Initiates dynamic sitemap crawler and page analysis (scanning `robots.txt`, sitemap XML indexes, or falling back to raw page anchor tags parsing) to auto-discover and list all crawlable sub-routes starting with the target website root.
+
+* **Request Body Schema (`WebsiteSubroutesRequest`):**
+  ```json
+  {
+    "url": "https://www.vaco.com"
+  }
+  ```
+
+* **Response Body Schema (`WebsiteSubroutesResponse`):**
+  ```json
+  {
+    "url": "https://www.vaco.com",
+    "sub_routes": [
+      "https://www.vaco.com/about",
+      "https://www.vaco.com/blog",
+      "https://www.vaco.com/services"
+    ]
+  }
+  ```
+
+* **Sample cURL Command:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/ingestion/website/sub-routes" \
+       -H "Content-Type: application/json" \
+       -d '{"url": "https://www.vaco.com"}'
+  ```
+
+---
+
+### C. Ingest File (`POST /api/v1/ingestion/file`)
+
+* **Purpose:**
+  Accepts binary form uploads supporting standard text files (`.txt`, `.md`), Word files (`.docx`), Excel worksheets (`.xlsx`), PowerPoint slides (`.pptx`), and PDF files (`.pdf`). Incorporates high-accuracy Gemini Multimodal OCR fallback for scanned/sparse PDFs. Uploads the raw file to Supabase storage bucket `documents/uploads/` and handles vector chunk indexing, embedding generation, and manifest logging.
+
+* **Request Payload (`multipart/form-data`):**
+  - `file`: File Binary Object (Required)
+
+* **Response Body Schema (`IngestionResponse`):**
+  ```json
+  {
+    "status": "success",
+    "message": "File Fortune 50 ERP Consolidation Case Study.pdf ingested successfully",
+    "chunk_count": 8,
+    "logs": [
+      "Starting ingestion for Fortune 50 ERP Consolidation Case Study.pdf",
+      "Uploaded to storage: uploads/Fortune 50 ERP Consolidation Case Study.pdf",
+      "Successfully inserted 8 rows.",
+      "Saved manifest entry."
+    ]
+  }
+  ```
+
+* **Sample cURL Command:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/ingestion/file" \
+       -F "file=@/path/to/my_presentation.pptx"
+  ```
+
+---
+
+### D. Get Ingested Documents (`GET /api/v1/ingestion/documents`)
+
+* **Purpose:**
+  Paginates and fetches all currently indexed vector chunks, textual content snippets, and source/classification metadata records stored in Supabase to be rendered inside the frontend administrative panel.
+
+* **Response Body Schema (`List[IngestedDocResponse]`):**
+  ```json
+  [
+    {
+      "id": "e4f8841a-8ab4-4fcd-bce8-641fa09312ab",
+      "content": "Consolidates global technology assets into a unified cloud matrix.",
+      "metadata": {
+        "source": "Fortune 50 ERP Consolidation Case Study.pdf",
+        "type": "pdf",
+        "title": "Fortune 50 ERP Consolidation Case Study",
+        "category": "case-study",
+        "industry": "technology",
+        "storage_path": "uploads/Fortune 50 ERP Consolidation Case Study.pdf"
+      }
+    }
+  ]
+  ```
+
+* **Sample cURL Command:**
+  ```bash
+  curl -X GET "http://localhost:8000/api/v1/ingestion/documents"
+  ```
+
+---
+
+## 2. Agent Component Endpoints
+
+### A. Prompt AI Agent (`POST /api/v1/agent/prompt`)
+
+* **Purpose:**
+  Queries the conversational RAG agent. Triggers a compiled LangGraph workflow state machine that binds `get_relevant_sources` (metadata summary manifest lookup) and `search_knowledge_base` (vector search lookup) as graph tools. Executes a structured output synthesizer to generate a clean, responsive Markdown body with strict download links (`[DOWNLOAD:filename.ext]` for files and `[title](url)` for websites). Handles Easter eggs triggers (`go orange`, `go blue`, `vaco!`) for UI events.
+
+* **Request Body Schema (`AgentPromptRequest`):**
+  ```json
+  {
+    "prompt": "What technology resources do we have available in the healthcare industry?",
+    "session_id": "optional-session-uuid" // Optional, default is "default"
+  }
+  ```
+
+* **Response Body Schema (`AgentPromptResponse`):**
+  ```json
+  {
+    "response": "### Healthcare Technology Resources\n\nHere are the healthcare files and links:\n\n- **Healthcare Cloud Architecture Study:** Designs and deploys standard cloud-native secure networks. [DOWNLOAD:Healthcare Cloud Architecture Study.pdf]\n- [Vaco Outbound Solutions](https://www.vaco.com/resources): Integrates customer service outsource solutions.\n\n📎 You can view or download the reference materials below — perfect for reviewing or attaching to an email.",
+    "steps": [
+      {
+        "type": "status",
+        "content": "Node 'agent' finished."
+      },
+      {
+        "type": "tool_call",
+        "content": "Tool Call Request: get_relevant_sources"
+      },
+      {
+        "type": "log",
+        "content": "Model call started."
+      }
+    ],
+    "special_event": null // String. "go_orange", "go_navy", "vaco_values", or null
+  }
+  ```
+
+* **Sample cURL Command:**
+  ```bash
+  curl -X POST "http://localhost:8000/api/v1/agent/prompt" \
+       -H "Content-Type: application/json" \
+       -d '{"prompt": "vaco!", "session_id": "demo-session"}'
+  ```
