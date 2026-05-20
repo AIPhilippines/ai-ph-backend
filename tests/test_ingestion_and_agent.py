@@ -127,3 +127,64 @@ def test_agent_service_widget_preservation_and_events():
     )
     assert "[MINIGAME:{\"game_type\":\"guessing_game\",\"topic\":\"AI\",\"data\":{\"word\":\"A\",\"clue\":\"B\"}}]" in synthesized_game
 
+
+def test_agent_service_memory_retrieval():
+    from app.components.Agent.Application.AgentService import AgentService
+    from app.components.Agent.Domain.AgentModels import AgentPromptRequest
+    from langchain_core.messages import HumanMessage, AIMessage
+    
+    service = AgentService()
+    
+    # Mock supabase client
+    mock_execute = MagicMock()
+    # Let's say we have 3 logs in DB, returned in descending order of ID (newest first)
+    mock_execute.data = [
+        {"id": 3, "user_query": "Third user query", "agent_response": "Third agent response"},
+        {"id": 2, "user_query": "Second user query", "agent_response": "Second agent response"},
+        {"id": 1, "user_query": "First user query", "agent_response": "First agent response"}
+    ]
+    
+    # Set up supabase mock query builder
+    query_builder = MagicMock()
+    query_builder.select.return_value = query_builder
+    query_builder.eq.return_value = query_builder
+    query_builder.order.return_value = query_builder
+    query_builder.limit.return_value = query_builder
+    query_builder.execute.return_value = mock_execute
+    
+    service.supabase.client.table = MagicMock(return_value=query_builder)
+    
+    # Mock the langgraph app_graph stream to prevent real LLM call
+    mock_stream = MagicMock(return_value=[])
+    with patch("app.components.Agent.Application.AgentService.app_graph.stream", mock_stream):
+        # We also patch synthesize_final_response and log_query to keep the test clean
+        with patch.object(service, "synthesize_final_response", return_value="Response"):
+            with patch.object(service, "log_query") as mock_log:
+                request = AgentPromptRequest(prompt="Current query", session_id="test-session-123")
+                service.prompt_agent(request)
+                
+                # Check that supabase query was built correctly with order desc=True and limit=30
+                service.supabase.client.table.assert_called_with("query_logs")
+                query_builder.select.assert_called_with("user_query, agent_response, id")
+                query_builder.eq.assert_called_with("session_id", "test-session-123")
+                query_builder.order.assert_called_with("id", desc=True)
+                query_builder.limit.assert_called_with(30)
+                
+                # Check stream input to see if history messages were reversed to chronological order
+                called_args, _ = mock_stream.call_args
+                initial_state = called_args[0]
+                messages = initial_state["messages"]
+                
+                # Find HumanMessage and AIMessage inside messages
+                hist_msgs = [m for m in messages if isinstance(m, (HumanMessage, AIMessage))]
+                # The last message is the current query (HumanMessage("Current query"))
+                # The preceding ones should be the chronological history (First -> Second -> Third)
+                assert len(hist_msgs) == 7 # 3 pairs of Q&A + 1 current prompt
+                assert hist_msgs[0].content == "First user query"
+                assert hist_msgs[1].content == "First agent response"
+                assert hist_msgs[2].content == "Second user query"
+                assert hist_msgs[3].content == "Second agent response"
+                assert hist_msgs[4].content == "Third user query"
+                assert hist_msgs[5].content == "Third agent response"
+                assert hist_msgs[6].content == "Current query"
+

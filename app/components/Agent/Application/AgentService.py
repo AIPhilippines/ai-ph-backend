@@ -504,17 +504,21 @@ class AgentService:
 
         # Retrieve recent conversation thread from query_logs for this session to build memory context
         history_messages = []
-        if request.session_id and request.session_id != "default":
+        if request.session_id:
             try:
                 hist_resp = self.supabase.client.table("query_logs") \
                     .select("user_query, agent_response, id") \
                     .eq("session_id", request.session_id) \
-                    .order("id", desc=False) \
-                    .limit(10) \
+                    .order("id", desc=True) \
+                    .limit(30) \
                     .execute()
                 
                 if hist_resp.data:
-                    for row in hist_resp.data:
+                    # Reverse list to keep chronological order (oldest to newest)
+                    recent_logs = list(hist_resp.data)
+                    recent_logs.reverse()
+                    
+                    for row in recent_logs:
                         user_q = row.get("user_query")
                         agent_r = row.get("agent_response")
                         if user_q:
